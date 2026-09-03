@@ -1,0 +1,30 @@
+# Phase 6 of the guide. KServe InferenceService pointing at the
+# MLflow-registered model artifact in S3.
+#
+# Swap the storageUri once you've trained + registered a model in Phase 4 --
+# it points at the model version MLflow logged to your artifacts bucket, e.g.:
+#   s3://creditcard-fraud-mlops-mlflow-artifacts-<account-id>/<experiment-id>/<run-id>/artifacts/model
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: fraud-model
+  namespace: creditcard-fraud-mlops
+  annotations:
+    # allows scale-to-zero when there's no traffic -- keeps a portfolio
+    # project cheap to leave running
+    serving.kserve.io/enable-metric-aggregation: "true"
+spec:
+  predictor:
+    minReplicas: 0
+    maxReplicas: 3
+    model:
+      modelFormat:
+        name: xgboost # or sklearn, depending on what you logged in src/train.py
+      storageUri: "s3://CHANGE-ME/path/to/model"
+      resources:
+        requests:
+          cpu: "250m"
+          memory: "512Mi"
+        limits:
+          cpu: "1"
+          memory: "1Gi"

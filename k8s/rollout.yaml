@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: fraud-model-serving
+  namespace: creditcard-fraud-mlops
+spec:
+  replicas: 3
+  strategy:
+    canary:
+      steps:
+        - setWeight: 10
+        - pause: { duration: 5m }
+        - analysis:
+            templates:
+              - templateName: success-rate-and-latency
+        - setWeight: 50
+        - pause: { duration: 5m }
+        - analysis:
+            templates:
+              - templateName: success-rate-and-latency
+        - setWeight: 100
+  selector:
+    matchLabels:
+      app: fraud-model-serving
+  template:
+    metadata:
+      labels:
+        app: fraud-model-serving
+    spec:
+      containers:
+        - name: serving
+          image: CHANGE-ME.dkr.ecr.eu-west-2.amazonaws.com/creditcard-fraud-mlops:CHANGE-ME
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
