@@ -1,0 +1,58 @@
+# Phase 3 of the guide. MLflow tracking server + registry, backed by the
+# RDS Postgres instance (backend store) and S3 bucket (artifact store)
+# Terraform created. This is a plain Deployment + Service rather than a
+# Helm chart -- more predictable to teach, and there's no official MLflow
+# chart worth depending on for a 2-day build.
+#
+# CHANGE-ME placeholders get filled from `terraform output` -- see the
+# apply command below rather than committing real infra values here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: creditcard-fraud-mlops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:latest
+          command: ["mlflow", "server"]
+          args:
+            - "--backend-store-uri=postgresql://mlflow:$(DB_PASSWORD)@CHANGE-ME-DB-ENDPOINT:5432/mlflow"
+            - "--default-artifact-root=s3://CHANGE-ME-BUCKET/"
+            - "--host=0.0.0.0"
+            - "--port=5000"
+          ports:
+            - containerPort: 5000
+          env:
+            - name: AWS_DEFAULT_REGION
+              value: "eu-west-2"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-db
+                  key: password
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: creditcard-fraud-mlops
+spec:
+  selector:
+    app: mlflow
+  ports:
+    - port: 5000
+      targetPort: 5000

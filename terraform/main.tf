@@ -25,7 +25,6 @@ module "vpc" {
   single_nat_gateway   = true # cost trade-off for a portfolio project; note this in your README
   enable_dns_hostnames = true
 
-  # Required tags for EKS to discover subnets for load balancers.
   public_subnet_tags = {
     "kubernetes.io/role/elb" = 1
   }
@@ -44,8 +43,9 @@ module "eks" {
 
   cluster_name    = "${var.project_name}-cluster"
   cluster_version = var.cluster_version
-  iam_role_name    = "${var.project_name}-eks"
-  cluster_endpoint_public_access = true # fine for a portfolio project; lock down for real prod
+  iam_role_name   = "${var.project_name}-eks"
+
+  cluster_endpoint_public_access = true
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
@@ -64,6 +64,29 @@ module "eks" {
   tags = {
     Project = var.project_name
   }
+}
+
+# Phase 3: lets the MLflow pod (running on any node) read/write the
+# artifacts bucket. Attached at the node level rather than scoped to the
+# MLflow pod specifically via IRSA -- a deliberate simplification for a
+# 2-day portfolio build (every pod on the node inherits this permission,
+# not just MLflow's). Note this trade-off in your README; IRSA (per-pod
+# identity) is the fix if you come back to harden this later.
+resource "aws_iam_role_policy" "node_mlflow_s3" {
+  name = "${var.project_name}-node-mlflow-s3"
+  role = module.eks.eks_managed_node_groups["default"].iam_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
+      Resource = [
+        aws_s3_bucket.mlflow_artifacts.arn,
+        "${aws_s3_bucket.mlflow_artifacts.arn}/*"
+      ]
+    }]
+  })
 }
 
 resource "aws_security_group" "rds" {
@@ -115,11 +138,13 @@ resource "aws_db_instance" "mlflow" {
 }
 
 resource "aws_s3_bucket" "mlflow_artifacts" {
-  bucket = "${var.project_name}-mlflow-artifacts-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.project_name}-mlflow-artifacts-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
 }
 
 resource "aws_s3_bucket" "dvc_store" {
-  bucket = "${var.project_name}-dvc-store-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.project_name}-dvc-store-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
 }
 
 data "aws_caller_identity" "current" {}

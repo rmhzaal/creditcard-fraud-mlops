@@ -15,6 +15,12 @@ output "mlflow_db_endpoint" {
   value = aws_db_instance.mlflow.address
 }
 
+output "mlflow_db_password" {
+  description = "Phase 3: kubectl create secret generic mlflow-db --from-literal=password=$(terraform output -raw mlflow_db_password) -n creditcard-fraud-mlops"
+  value       = random_password.db.result
+  sensitive   = true
+}
+
 output "mlflow_artifacts_bucket" {
   value = aws_s3_bucket.mlflow_artifacts.bucket
 }
