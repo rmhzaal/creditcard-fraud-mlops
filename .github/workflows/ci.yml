@@ -1,0 +1,90 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_REPOSITORY: creditcard-fraud-mlops
+  EKS_CLUSTER_NAME: creditcard-fraud-mlops-cluster
+  NAMESPACE: creditcard-fraud-mlops
+  ROLLOUT_NAME: fraud-model-serving
+  AWS_ROLE_ARN: arn:aws:iam::905418469584:role/creditcard-fraud-mlops-github-actions
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/ -v
+
+  build-scan-push:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        run: |
+          docker build -t $ECR_REPOSITORY:${{ github.sha }} .
+          docker tag $ECR_REPOSITORY:${{ github.sha }} ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+      - name: Push image
+        run: docker push ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+
+      - name: Set image output
+        id: image
+        run: echo "image=${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build-scan-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+
+      - name: Install kubectl-argo-rollouts plugin
+        run: |
+          curl -sSL -o kubectl-argo-rollouts https://github.com/argoproj/argo-rollouts/releases/latest/download/kubectl-argo-rollouts-linux-amd64
+          chmod +x kubectl-argo-rollouts
+          sudo mv kubectl-argo-rollouts /usr/local/bin/
+
+      - name: Deploy new image via Argo Rollouts
+        run: |
+          kubectl argo rollouts set image $ROLLOUT_NAME \
+            serving=${{ needs.build-scan-push.outputs.image }} \
+            -n $NAMESPACE

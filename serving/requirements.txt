@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+mlflow
+boto3
+prometheus-client
