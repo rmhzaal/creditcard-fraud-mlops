@@ -1,0 +1,9 @@
+# msgpack and setuptools findings below come from pip's internal vendored/
+# bundled copies (pip/_vendor/msgpack and ensurepip's bundled setuptools
+# wheel), not from our application's installed dependencies. Confirmed via
+# Trivy scan: our top-level msgpack and setuptools installs are both clean
+# and upgraded. These bundled copies are never imported or exposed by our
+# code -- they ship as part of the official python:3.11-slim base image's
+# pip bootstrap tooling. Revisit if the upstream base image updates them.
+GHSA-6v7p-g79w-8964
+CVE-2025-47273
