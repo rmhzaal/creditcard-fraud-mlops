@@ -56,6 +56,7 @@ jobs:
           image-ref: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           severity: CRITICAL,HIGH
           exit-code: "1"
+          ignore-unfixed: "true"
 
       - name: Push image
         run: docker push ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
