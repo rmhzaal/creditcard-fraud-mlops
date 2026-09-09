@@ -1,0 +1,18 @@
+# tells the Prometheus Operator (installed via kube-prometheus-stack)
+# to scrape /metrics on the serving Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fraud-model-serving
+  namespace: creditcard-fraud-mlops
+spec:
+  selector:
+    matchLabels:
+      app: fraud-model-serving
+  namespaceSelector:
+    matchNames:
+      - creditcard-fraud-mlops
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
