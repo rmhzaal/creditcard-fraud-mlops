@@ -12,6 +12,8 @@ MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow.credi
 REGISTERED_MODEL_NAME = "creditcard-fraud-xgb"
 ALIAS = "champion"
 
+FEATURE_COLUMNS = ["Time"] + [f"V{i}" for i in range(1, 29)] + ["Amount"]
+
 app = FastAPI()
 _model = None
 _scaler = None
@@ -44,6 +46,7 @@ def health():
 def predict(transaction: Transaction):
     row = pd.DataFrame([transaction.model_dump()])
     row[["Amount", "Time"]] = _scaler.transform(row[["Amount", "Time"]])
+    row = row[FEATURE_COLUMNS]
 
     fraud_probability = float(_model.predict(row)[0])
     return {
