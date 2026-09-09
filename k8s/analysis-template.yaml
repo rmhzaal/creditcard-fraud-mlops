@@ -1,7 +1,3 @@
-# Phase 8 of the guide: the actual automated go/no-go check.
-# Argo Rollouts queries Prometheus at each canary step; if error rate
-# or latency breach the threshold, the rollout auto-aborts and rolls
-# back to the last stable version -- no human decision required.
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:
@@ -21,7 +17,11 @@ spec:
         prometheus:
           address: http://prometheus-operated.monitoring.svc.cluster.local:9090
           query: |
-            sum(rate(http_requests_total{job="{{args.service-name}}",status=~"5.."}[5m]))
+            (
+              sum(rate(http_requests_total{job="{{args.service-name}}",status=~"5.."}[5m]))
+              or
+              vector(0)
+            )
             /
             sum(rate(http_requests_total{job="{{args.service-name}}"}[5m]))
     - name: p95-latency

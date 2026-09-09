@@ -1,6 +1,12 @@
+# loads the "champion" model AND its matching scaler (logged
+# together in the same MLflow run by src/train.py) on startup, so every
+# prediction uses the exact same feature scaling the model was trained on.
+#
+# instrumented with Prometheus metrics. Metric names
+# (http_requests_total, http_request_duration_seconds) match what
+# k8s/analysis-template.yaml queries
 import os
 import time
-
 import mlflow
 import mlflow.pyfunc
 import mlflow.sklearn
@@ -39,11 +45,15 @@ class Transaction(BaseModel):
 @app.middleware("http")
 async def prometheus_middleware(request: Request, call_next):
     start = time.time()
-    response = await call_next(request)
-    duration = time.time() - start
-    REQUEST_LATENCY.labels(request.method, request.url.path).observe(duration)
-    REQUEST_COUNT.labels(request.method, request.url.path, response.status_code).inc()
-    return response
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        duration = time.time() - start
+        REQUEST_LATENCY.labels(request.method, request.url.path).observe(duration)
+        REQUEST_COUNT.labels(request.method, request.url.path, status_code).inc()
 
 
 @app.on_event("startup")
