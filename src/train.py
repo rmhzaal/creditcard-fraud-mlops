@@ -1,13 +1,14 @@
-# Phase 4 of the guide. Trains an XGBoost fraud classifier, logs everything
+# Trains an XGBoost fraud classifier, logs everything
 # to MLflow, and only promotes the new version if it beats the current
-# "champion" -- this gate is what makes it safe to let Phase 8 trigger this
+# "champion" this gate is what makes it safe to let Phase 8 trigger this
 # script automatically on drift, without a human reviewing every run.
 #
-# Note: MLflow's old Staging/Production "stages" are deprecated. We use
-# a "champion" alias instead -- see Section 2.5 of the PDF guide.
-import os
+# MLflow's old Staging/Production "stages" are deprecated. We use
+# a "champion" alias instead.
 
+import os
 import mlflow
+import mlflow.sklearn
 import mlflow.xgboost
 import pandas as pd
 from mlflow.tracking import MlflowClient
@@ -34,10 +35,19 @@ def recall_at_precision(y_true, y_scores, target_precision: float = 0.9) -> floa
 
 def load_data(path: str = "data/raw/creditcard.csv"):
     df = pd.read_csv(path)
-    df = engineer_features(df)
     X = df.drop(columns=["Class"])
     y = df["Class"]
-    return train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+
+    # Fit the scaler on the training split only, then apply that same
+    # fitted scaler to the test split -- never re-fit on test data, and
+    # never re-fit at serving time either.
+    X_train, scaler = engineer_features(X_train)
+    X_test, _ = engineer_features(X_test, scaler=scaler)
+
+    return X_train, X_test, y_train, y_test, scaler
 
 
 def get_current_champion_pr_auc(client: MlflowClient) -> float:
@@ -53,7 +63,7 @@ def train() -> None:
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    X_train, X_test, y_train, y_test = load_data()
+    X_train, X_test, y_train, y_test, scaler = load_data()
 
     with mlflow.start_run() as run:
         model = XGBClassifier(
@@ -73,6 +83,7 @@ def train() -> None:
         mlflow.log_metric("pr_auc", pr_auc)
         mlflow.log_metric("recall_at_p90", recall_p90)
         mlflow.xgboost.log_model(model, artifact_path="model")
+        mlflow.sklearn.log_model(scaler, artifact_path="scaler")
 
         print(f"Run {run.info.run_id}: PR-AUC={pr_auc:.4f}  recall@P90={recall_p90:.4f}")
 

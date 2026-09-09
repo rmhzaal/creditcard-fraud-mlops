@@ -3,3 +3,6 @@ uvicorn[standard]
 mlflow
 boto3
 prometheus-client
+pandas
+scikit-learn
+xgboost
