@@ -6,3 +6,5 @@ prefect
 boto3
 pytest
 dvc[s3]
+evidently
+s3fs
