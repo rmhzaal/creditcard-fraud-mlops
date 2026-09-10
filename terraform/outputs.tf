@@ -33,3 +33,8 @@ output "github_actions_role_arn" {
   description = "Put this in your GitHub Actions workflow's role-to-assume input."
   value       = module.iam_oidc.role_arn
 }
+
+output "mlflow_db_secret_name" {
+  description = "Phase 9: fill this into k8s/external-secret.yaml's remoteRef.key."
+  value       = aws_secretsmanager_secret.mlflow_db.name
+}

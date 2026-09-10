@@ -198,3 +198,28 @@ resource "aws_iam_role_policy" "node_dvc_s3_read" {
     }]
   })
 }
+
+resource "aws_secretsmanager_secret" "mlflow_db" {
+  name = "${var.project_name}-mlflow-db-password"
+}
+
+resource "aws_secretsmanager_secret_version" "mlflow_db" {
+  secret_id     = aws_secretsmanager_secret.mlflow_db.id
+  secret_string = random_password.db.result
+}
+
+# Read-only access to just this one secret least-privilege pattern
+# as node_dvc_s3_read, scoped to exactly what External Secrets Operator needs.
+resource "aws_iam_role_policy" "node_secrets" {
+  name = "${var.project_name}-node-secrets"
+  role = module.eks.eks_managed_node_groups["default"].iam_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = [aws_secretsmanager_secret.mlflow_db.arn]
+    }]
+  })
+}
