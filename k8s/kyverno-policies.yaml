@@ -1,0 +1,43 @@
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: require-image-tag
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+      validate:
+        message: "Images must not use the :latest tag -- use the Git SHA tag ci.yml already produces."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: verify-signature
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces: ["creditcard-fraud-mlops"]
+      verifyImages:
+        - imageReferences:
+            - "*.dkr.ecr.eu-west-2.amazonaws.com/creditcard-fraud-mlops*"
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/rmhzaal/creditcard-fraud-mlops/.github/workflows/ci.yml@refs/heads/main"
+                    issuer: "https://token.actions.githubusercontent.com"
