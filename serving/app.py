@@ -1,17 +1,14 @@
-# loads the "champion" model AND its matching scaler (logged
-# together in the same MLflow run by src/train.py) on startup, so every
-# prediction uses the exact same feature scaling the model was trained on.
-#
-# instrumented with Prometheus metrics. Metric names
-# (http_requests_total, http_request_duration_seconds) match what
-# k8s/analysis-template.yaml queries
+import json
 import os
 import time
+import uuid
+
+import boto3
 import mlflow
 import mlflow.pyfunc
 import mlflow.sklearn
 import pandas as pd
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from mlflow.tracking import MlflowClient
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
@@ -20,12 +17,15 @@ from pydantic import BaseModel, ConfigDict
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow.creditcard-fraud-mlops.svc.cluster.local:5000")
 REGISTERED_MODEL_NAME = "creditcard-fraud-xgb"
 ALIAS = "champion"
+PREDICTIONS_BUCKET = os.environ.get("PREDICTIONS_BUCKET")  # set from terraform output mlflow_artifacts_bucket
+SIMULATE_FAILURE = os.environ.get("SIMULATE_FAILURE", "false").lower() == "true"
 
 FEATURE_COLUMNS = ["Time"] + [f"V{i}" for i in range(1, 29)] + ["Amount"]
 
 app = FastAPI()
 _model = None
 _scaler = None
+_s3 = boto3.client("s3") if PREDICTIONS_BUCKET else None
 
 REQUEST_COUNT = Counter("http_requests_total", "Total HTTP requests", ["method", "path", "status"])
 REQUEST_LATENCY = Histogram("http_request_duration_seconds", "Request latency in seconds", ["method", "path"])
@@ -78,14 +78,33 @@ def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+def _log_prediction_to_s3(raw_features: dict, fraud_probability: float):
+    if _s3 is None:
+        return
+    record = {**raw_features, "fraud_probability": fraud_probability}
+    key = f"live-predictions/{time.strftime('%Y-%m-%d')}/{uuid.uuid4()}.json"
+    try:
+        _s3.put_object(Bucket=PREDICTIONS_BUCKET, Key=key, Body=json.dumps(record))
+    except Exception as e:
+        print(f"Failed to log prediction to S3: {e}")  # never let logging break a prediction
+
+
 @app.post("/predict")
-def predict(transaction: Transaction):
-    row = pd.DataFrame([transaction.model_dump()])
+def predict(transaction: Transaction, background_tasks: BackgroundTasks):
+    if SIMULATE_FAILURE:
+        # Deliberate chaos-test hook for the Phase 8 rollback test. Never
+        # set true in a real deploy -- only for the one-off test.
+        raise HTTPException(status_code=500, detail="Simulated failure for rollback test")
+
+    raw_features = transaction.model_dump()
+    row = pd.DataFrame([raw_features])
     row[["Amount", "Time"]] = _scaler.transform(row[["Amount", "Time"]])
     row = row[FEATURE_COLUMNS]
 
     fraud_probability = float(_model.predict(row)[0])
     PREDICTION_SCORE.observe(fraud_probability)
+
+    background_tasks.add_task(_log_prediction_to_s3, raw_features, fraud_probability)
 
     return {
         "fraud_probability": fraud_probability,

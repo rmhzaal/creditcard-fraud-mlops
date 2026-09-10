@@ -178,3 +178,23 @@ resource "aws_eks_access_policy_association" "github_actions_edit" {
     namespaces = ["creditcard-fraud-mlops"]
   }
 }
+
+# The drift-check CronJob reads the reference dataset from the DVC
+# bucket. Separate, read-only policy rather than widening node_mlflow_s3
+# this job never needs to write to DVC's store, only read the one CSV.
+resource "aws_iam_role_policy" "node_dvc_s3_read" {
+  name = "${var.project_name}-node-dvc-s3-read"
+  role = module.eks.eks_managed_node_groups["default"].iam_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["s3:GetObject", "s3:ListBucket"]
+      Resource = [
+        aws_s3_bucket.dvc_store.arn,
+        "${aws_s3_bucket.dvc_store.arn}/*"
+      ]
+    }]
+  })
+}

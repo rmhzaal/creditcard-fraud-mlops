@@ -1,12 +1,7 @@
-# Trains an XGBoost fraud classifier, logs everything
-# to MLflow, and only promotes the new version if it beats the current
-# "champion" this gate is what makes it safe to let Phase 8 trigger this
-# script automatically on drift, without a human reviewing every run.
-#
-# MLflow's old Staging/Production "stages" are deprecated. We use
-# a "champion" alias instead.
-
 import os
+import shutil
+import tempfile
+
 import mlflow
 import mlflow.sklearn
 import mlflow.xgboost
@@ -25,9 +20,6 @@ ALIAS = "champion"
 
 
 def recall_at_precision(y_true, y_scores, target_precision: float = 0.9) -> float:
-    """How much fraud you'd catch while keeping false-positive rate low
-    enough that precision stays >= target_precision. More meaningful than
-    accuracy on a dataset where ~99.8% of transactions are legitimate."""
     precision, recall, _ = precision_recall_curve(y_true, y_scores)
     eligible = recall[precision >= target_precision]
     return float(eligible.max()) if len(eligible) else 0.0
@@ -40,13 +32,8 @@ def load_data(path: str = "data/raw/creditcard.csv"):
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, stratify=y, random_state=42
     )
-
-    # Fit the scaler on the training split only, then apply that same
-    # fitted scaler to the test split -- never re-fit on test data, and
-    # never re-fit at serving time either.
     X_train, scaler = engineer_features(X_train)
     X_test, _ = engineer_features(X_test, scaler=scaler)
-
     return X_train, X_test, y_train, y_test, scaler
 
 
@@ -56,7 +43,7 @@ def get_current_champion_pr_auc(client: MlflowClient) -> float:
         run = client.get_run(mv.run_id)
         return run.data.metrics.get("pr_auc", 0.0)
     except Exception:
-        return 0.0  # no champion registered yet -- first run always promotes
+        return 0.0
 
 
 def train() -> None:
@@ -84,6 +71,15 @@ def train() -> None:
         mlflow.log_metric("recall_at_p90", recall_p90)
         mlflow.xgboost.log_model(model, artifact_path="model")
         mlflow.sklearn.log_model(scaler, artifact_path="scaler")
+
+        # Phase 8: log a copy of the raw training data as a named artifact --
+        # a provenance record of exactly what data trained this run. (The
+        # drift job itself reads DATA_PATH from S3 directly, decoupled from
+        # whichever run currently holds the champion alias.)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ref_path = os.path.join(tmpdir, "reference_data.csv")
+            shutil.copy("data/raw/creditcard.csv", ref_path)
+            mlflow.log_artifact(ref_path)
 
         print(f"Run {run.info.run_id}: PR-AUC={pr_auc:.4f}  recall@P90={recall_p90:.4f}")
 
