@@ -83,6 +83,15 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pull DVC-tracked data
+        run: |
+          pip install "dvc[s3]"
+          dvc pull
+
       - name: Login to ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
