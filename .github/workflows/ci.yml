@@ -71,6 +71,44 @@ jobs:
         id: image
         run: echo "image=${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
+  build-scan-push-jobs-image:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build jobs image
+        run: |
+          docker build -t $ECR_REPOSITORY:jobs-${{ github.sha }} -f Dockerfile.jobs .
+          docker tag $ECR_REPOSITORY:jobs-${{ github.sha }} ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:jobs-${{ github.sha }}
+
+      - name: Scan jobs image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:jobs-${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: "true"
+
+      - name: Push jobs image
+        run: docker push ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:jobs-${{ github.sha }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign jobs image (keyless)
+        run: cosign sign --yes ${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:jobs-${{ github.sha }}
+
   deploy:
     needs: build-scan-push
     runs-on: ubuntu-latest
