@@ -1,7 +1,4 @@
-"""pulls a rolling window of recent live /predict inputs (logged to
-S3 by serving/app.py) and compares them against a stable reference sample of
-the training data, using Evidently AI, to compute a drift share.
-"""
+
 import json
 import os
 import subprocess
@@ -58,17 +55,14 @@ def compute_drift_share(reference: pd.DataFrame, current: pd.DataFrame) -> float
     result = report.run(reference, current)
     result_dict = result.dict()
 
-    # Defensive extraction -- walk the metrics list for whichever one
-    # reports an overall drift share, rather than hardcoding one exact
-    # key path that might not match the installed Evidently version.
     for metric in result_dict.get("metrics", []):
-        res = metric.get("result", {})
-        if isinstance(res, dict):
-            for key in ("drift_share", "drifted_columns_share", "share"):
-                if key in res:
-                    return float(res[key])
+        metric_type = metric.get("config", {}).get("type", "")
+        if "DriftedColumnsCount" in metric_type:
+            value = metric.get("value", {})
+            if isinstance(value, dict) and "share" in value:
+                return float(value["share"])
 
-    print("Could not find a drift-share key in the report -- full result for debugging:")
+    print("Could not find a DriftedColumnsCount metric in the report -- full result for debugging:")
     print(json.dumps(result_dict, indent=2, default=str)[:3000])
     raise RuntimeError("Evidently report did not contain a recognizable drift-share metric")
 
