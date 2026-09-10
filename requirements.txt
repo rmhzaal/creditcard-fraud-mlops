@@ -3,7 +3,8 @@ scikit-learn
 xgboost
 mlflow
 prefect
-boto3
+boto3==1.43.75
+botocore==1.43.75
 pytest
 dvc[s3]
 evidently
