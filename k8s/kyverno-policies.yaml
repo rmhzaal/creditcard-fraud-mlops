@@ -41,4 +41,5 @@ spec:
                 - keyless:
                     subject: "https://github.com/rmhzaal/creditcard-fraud-mlops/.github/workflows/ci.yml@refs/heads/main"
                     issuer: "https://token.actions.githubusercontent.com"
-                    rekor: {}
+                    rekor:
+                      url: "https://rekor.sigstore.dev"
