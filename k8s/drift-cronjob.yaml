@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: drift-check
+  namespace: creditcard-fraud-mlops
+spec:
+  schedule: "0 */6 * * *"
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: drift-check
+              image: 905418469584.dkr.ecr.eu-west-2.amazonaws.com/creditcard-fraud-mlops:jobs-latest
+              imagePullPolicy: Always
+              env:
+                - name: MLFLOW_TRACKING_URI
+                  value: "http://mlflow.creditcard-fraud-mlops.svc.cluster.local:5000"
+                - name: PREDICTIONS_BUCKET
+                  value: "creditcard-fraud-mlops-mlflow-artifacts-905418469584"
+                - name: DATA_PATH
+                  value: "s3://creditcard-fraud-mlops-dvc-store-905418469584/reference/creditcard.csv"
+                - name: DRIFT_LOOKBACK_HOURS
+                  value: "6"
+                - name: DRIFT_THRESHOLD
+                  value: "0.3"
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "1Gi"
