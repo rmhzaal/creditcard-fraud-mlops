@@ -39,7 +39,7 @@ spec:
           attestors:
             - entries:
                 - keyless:
-                    subject: "https://github.com/rmhzaal/creditcard-fraud-mlops/.github/workflows/ci.yml@refs/heads/main"
+                    subject: "https://github.com/rmhzaal/creditcard-fraud-mlops/.github/workflows/ci.yml@refs/heads/master"
                     issuer: "https://token.actions.githubusercontent.com"
                     rekor:
                       url: "https://rekor.sigstore.dev"
