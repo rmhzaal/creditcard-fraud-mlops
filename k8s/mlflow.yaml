@@ -1,8 +1,5 @@
 # MLflow tracking server + registry, backed by the
 # RDS Postgres instance (backend store) and S3 bucket (artifact store)
-# Terraform created. This is a plain Deployment + Service rather than a
-#
-# CHANGE-ME placeholders get filled from `terraform output`
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,7 +17,7 @@ spec:
     spec:
       containers:
         - name: mlflow
-          image: ghcr.io/mlflow/mlflow:latest
+          image: ghcr.io/mlflow/mlflow:v3.16.0
           command: ["mlflow", "server"]
           args:
             - "--backend-store-uri=postgresql://mlflow:$(DB_PASSWORD)@creditcard-fraud-mlops-mlflow.cloa6kucwdon.eu-west-2.rds.amazonaws.com:5432/mlflow"
